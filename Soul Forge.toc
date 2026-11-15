@@ -1,0 +1,26 @@
+## Interface: 30300
+## Title: |cff7fe8ffS|r|cff90c8ffo|r|cffa0a2ffu|r|cffb07cffl|r |cffffd84aF|r|cffffb23co|r|cffff8c2er|r|cffff5b1fg|r|cffff2a10e|r
+## Notes: Counts your kills of dungeon and raid bosses and rares, per character, instance and difficulty (incl. Synastria Mythic), with account totals.
+## Author: Sablinova
+## Version: 1.0.0
+## SavedVariables: SoulForgeDB
+## OptionalDeps: InstanceGPS
+
+Style.lua
+UI\Skins\Faction.lua
+UI\Skins\Painted.lua
+UI\Skins\Cognac\Atlas.lua
+UI\Skins\Cognac\Skin.lua
+UI\Skins\Cosmic\Skin.lua
+UI\Skins\Material\Skin.lua
+UI\Skins\CognacPicture\Art.lua
+UI\Skins\HordePicture\Art.lua
+UI\Skins\AlliancePicture\Art.lua
+Bosses.lua
+Core.lua
+Leaderboard.lua
+Verify.lua
+UI.lua
+BoardsUI.lua
+MinimapButton.lua
+Update.lua
