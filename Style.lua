@@ -701,7 +701,8 @@ end
 -- presses outside a frame, so this watches for a button going down while either is open.
 function S.ClickedAway()
 	for _, menu in ipairs(menus) do
-		if menu:IsShown() and not MouseIsOver(menu) and not MouseIsOver(menu.owner) then menu:Hide() end
+		-- (1.0.1) owner may be missing: MouseIsOver(nil) is a Lua error in the client's UIParent.lua
+		if menu:IsShown() and not MouseIsOver(menu) and not (menu.owner and MouseIsOver(menu.owner)) then menu:Hide() end
 	end
 	for _, e in ipairs(inputs) do
 		if e.focused and not MouseIsOver(e.clickArea or e) then e:ClearFocus() end

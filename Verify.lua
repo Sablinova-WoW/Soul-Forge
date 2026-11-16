@@ -15,9 +15,9 @@
 -- A total on the board is the ACCOUNT's (all its characters), the server shows one character at a time, so
 -- each character is checked on its own: p.vc[name] = { v = its server total, at = when, d = true when we
 -- checked it ourselves (false = passed on by someone we checked) }. Its verified total is the sum of those,
--- and it may have grown since: its board total counts up to sum + GROW_BASE + GROW_HOUR per hour since the
--- newest check (more than anyone kills in that time, less than a made-up jump). Characters never checked
--- don't add to it until they are.
+-- and it may have grown since: each checked character's claim counts up to its server total + GROW_BASE +
+-- GROW_HOUR per hour since the newest check (more than anyone kills in that time, less than a made-up jump).
+-- (1.0.1) Characters never checked count as claimed, like any unverified standing.
 --
 -- Who is checked: Soul Forge players you meet (mouseover, target, your group) whose character name sent a
 -- standing, in inspect range, at most one check every CHECK_GAP seconds, each character again after RECHECK
@@ -87,7 +87,25 @@ function NS.PeerTrust(p, now)
     if not sum then return "unverified" end
     local hours = ((now or Now()) - newest) / 3600
     if hours < 0 then hours = 0 end
-    return "verified", sum + GROW_BASE + floor(GROW_HOUR * hours), sum, newest
+    local grow = GROW_BASE + floor(GROW_HOUR * hours)
+    -- (1.0.1) only the CHECKED characters are held to what the server showed: each one's claim may be above its
+    -- server total by plausible growth at most; the account's other characters count as claimed, like every
+    -- unverified standing (0.9.45: everyone is ranked). Before, the whole account total was capped at the checked
+    -- characters' sum, so checking one character of a many-character account cut its standing to that character.
+    -- A checked character with no claim of its own (an older copy's standing) leaves nothing to compare: the old
+    -- limit then (checked kills + growth).
+    local over, unknown = 0, false
+    local cc = type(p.cc) == "table" and p.cc or nil
+    for name, c in pairs(p.vc) do
+        local claim = cc and tonumber(cc[name])
+        if type(c) == "table" and type(c.v) == "number" then
+            if not claim then unknown = true elseif claim > c.v then over = over + (claim - c.v) end
+        end
+    end
+    local claimed = tonumber(p.t)
+    if not claimed or unknown then return "verified", sum + grow, sum, newest end
+    local cut = over > grow and over - grow or 0
+    return "verified", claimed - cut, sum, newest
 end
 
 -- one of this account's characters: the one it sends from, or one that sent a standing with its total

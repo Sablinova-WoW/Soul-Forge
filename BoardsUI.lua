@@ -238,17 +238,39 @@ local function Draw()
             line.name:SetText((not r.me and r.verified) and (r.name .. " " .. VERIFIED_MARK) or r.name)
             line.name:SetTextColor(unpack(r.me and V.C.me or V.C.text))
             local t = r.rank and r.rank > 0 and NS.TITLES[r.rank]
-            line.title:SetText(t and t[2] or "—")
+            line.title:SetText(t and (NS.TitleName and NS.TitleName(r.rank) or t[2]) or "—")   -- (1.0.1) earned titles shown by name
             -- (0.9.43) a title wider than its column drawn smaller (never below 10); still too wide: the usual "...",
             -- and the row's tooltip has it whole. Measured at the row's size; the font is only set when it changes.
+            -- (1.0.1) user: long titles must show whole (a 15-letter one ended in "..." on four looks). First the
+            -- room the total's number doesn't use (it is right-aligned; 112 was kept for 1,000,000 and more), then
+            -- smaller (not below 10), then on two lines in the row's height (not below 9), and only then "...".
             if V.font then
                 local size = V.rowSize
-                if line.titleSize and line.titleSize ~= size then V.font(line.title, size, false) end
-                line.titleSize = size
-                local room, w = line.title:GetWidth() or 0, line.title:GetStringWidth() or 0
+                if line.titleSize ~= size or line.titleWrap then
+                    V.font(line.title, size, false)
+                    if line.titleWrap then line.title:SetWordWrap(false); line.title:SetHeight(0) end
+                    line.titleSize, line.titleWrap = size, nil
+                end
+                if line.titleBase then line.title:SetWidth(line.titleBase) end   -- rows are reused: back to the column
+                local room = line.title:GetWidth() or 0
+                if line.titleRoom then
+                    line.total:SetText(Num(state.inst and r.value or r.total))
+                    local free = line.titleRoom - (line.total:GetStringWidth() or 0) - 10
+                    if free > room then room = free; line.title:SetWidth(room) end
+                end
+                local w = line.title:GetStringWidth() or 0
                 if room > 0 and w > room then
-                    local want = math.max(10, math.floor(size * room / w))
-                    if want < size then V.font(line.title, want, false); line.titleSize = want end
+                    local want = math.floor(size * room / w)
+                    if want >= 10 then
+                        V.font(line.title, want, false); line.titleSize = want
+                    elseif line.titleTall and line.titleTall > 0 then
+                        -- two lines: about twice the room, a little less for where the words break
+                        local two = math.max(9, math.min(size, math.floor(line.titleTall / 2.3), math.floor(size * room * 2 * 0.85 / w)))
+                        V.font(line.title, two, false); line.titleSize = two
+                        line.title:SetWordWrap(true); line.title:SetHeight(line.titleTall); line.titleWrap = true
+                    else
+                        V.font(line.title, 10, false); line.titleSize = 10
+                    end
                 end
             end
             local onBar = r.me and V.C.meRow   -- (your row's words in the bar's own colours)
@@ -469,6 +491,8 @@ function NS.BuildBoards(f, B)
         line.name:SetWidth(sc(c.title - c.name - 10)); at(line.name, c.name, y, "LEFT")
         line.title = text(line, B.rowSize or 12, B.C.text, false)
         line.title:SetWidth(sc(c.total - 112 - c.title)); at(line.title, c.title, y, "LEFT")   -- (room for 1,000,000)
+        -- (1.0.1) the room up to the number's column, and the row's height for a title on two lines (Draw)
+        line.titleRoom, line.titleTall, line.titleBase = sc(c.total - c.title), sc(rowH) - 2, sc(c.total - 112 - c.title)
         line.total = text(line, B.rowSize or 12, B.C.number, true, "RIGHT")
         at(line.total, c.total, y, "RIGHT")
         line.today = text(line, B.rowSize or 12, B.C.today, false, "RIGHT")
@@ -490,7 +514,7 @@ function NS.BuildBoards(f, B)
             local t = r.rank and NS.TITLES[r.rank]
             if t then
                 local tc = K.StageText(r.rank)
-                GameTooltip:AddLine(t[2] .. "  (title " .. r.rank .. " of " .. #NS.TITLES .. ")", tc[1], tc[2], tc[3])
+                GameTooltip:AddLine((NS.TitleName and NS.TitleName(r.rank) or t[2]) .. "  (title " .. r.rank .. " of " .. #NS.TITLES .. ")", tc[1], tc[2], tc[3])
             end
             if state.inst then GameTooltip:AddDoubleLine(PlaceText(), Num(r.value), 0.8, 0.8, 0.8, 1, 1, 1) end
             GameTooltip:AddDoubleLine("Total kills", Num(r.total), 0.8, 0.8, 0.8, 1, 1, 1)
@@ -506,7 +530,7 @@ function NS.BuildBoards(f, B)
             -- (0.9.42) what the server has shown of this player
             if not r.me then
                 if r.verified and r.checkedAt then
-                    GameTooltip:AddLine("Verified by the server: " .. Num(r.checked) .. " kills, " .. Ago(r.checkedAt), 0.45, 0.85, 0.45)
+                    GameTooltip:AddLine("Verified by the server: " .. Num(r.checked) .. " kills on the characters checked, " .. Ago(r.checkedAt), 0.45, 0.85, 0.45, true)   -- (1.0.1) the rest of the account counts as their addon says
                     if r.claimed and r.total and r.claimed > r.total then
                         GameTooltip:AddLine("Claims " .. Num(r.claimed) .. ": counted up to what is possible since then", 0.85, 0.7, 0.4, true)
                     end

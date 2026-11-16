@@ -312,12 +312,37 @@ local function Mine()
     if b then
         local me = type(b.me) == "table" and b.me or {}
         b.me = me
-        -- a new day or week starts from the last reading before it (kills made since then belong to it)
-        local from = (type(me.last) == "number" and me.last <= total) and me.last or total
-        if me.day ~= day or type(me.start) ~= "number" or me.start > total then me.day, me.start = day, from end
-        if me.week ~= week or type(me.wstart) ~= "number" or me.wstart > total then me.week, me.wstart = week, from end
-        me.last = total
-        today, weekly = total - me.start, total - me.wstart
+        -- (1.0.1) counted per character: a character seen for the first time (or first since this version) starts
+        -- at its own total, so its lifetime kills are not "souls today". Before, the account total's jump when an
+        -- alt first logged in with Soul Forge was all counted as today's and this week's kills (millions), every
+        -- other copy found that impossible and dropped the whole standing, total included.
+        -- me.lc = each character's last reading; me.cs / me.ws = its reading when the day / week began. A new day
+        -- or week starts from the last reading before it (kills made since then belong to it).
+        local db = NS.DB and NS.DB()
+        local lc = type(me.lc) == "table" and me.lc or {}
+        local newDay = me.day ~= day or type(me.cs) ~= "table"
+        local newWeek = me.week ~= week or type(me.ws) ~= "table"
+        local cs = (not newDay) and me.cs or {}
+        local ws = (not newWeek) and me.ws or {}
+        for key, c in pairs(db and db.chars or {}) do
+            local v = type(c) == "table" and tonumber(c.totalKills)
+            if v then
+                -- where this character's day / week starts: kept while it is still that day / week; on a real
+                -- rollover its last reading (else now); a character not seen before starts now
+                local last = tonumber(lc[key])
+                local from = (last and last <= v) and last or v
+                local d, w = tonumber(cs[key]), tonumber(ws[key])
+                if newDay then d = type(me.cs) == "table" and from or v elseif not d or d > v then d = v end
+                if newWeek then w = type(me.ws) == "table" and from or v elseif not w or w > v then w = v end
+                cs[key], ws[key] = d, w
+                today, weekly = today + (v - d), weekly + (v - w)
+                lc[key] = v
+            end
+        end
+        me.day, me.week, me.cs, me.ws, me.lc = day, week, cs, ws, lc
+        me.start, me.wstart, me.last = nil, nil, nil   -- the account-wide readings before 1.0.1
+        if today > total then today = total end
+        if weekly > total then weekly = total end
     end
     return total, info.rank or 0, day, today, week, weekly
 end
@@ -622,11 +647,16 @@ end
 
 -- the numbers of a standing, or nil when they are impossible (shared by heard and relayed standings)
 local function Clean(class, rank, total, day, today, week, weekly)
-    rank, total, day, today = Num(rank, 99), Num(total, MAX_TOTAL), Num(day, 99991231), Num(today, MAX_TODAY)
-    week, weekly = Num(week, 99999), Num(weekly, MAX_WEEK)
+    rank, total, day = Num(rank, 99), Num(total, MAX_TOTAL), Num(day, 99991231)
+    -- (1.0.1) an impossible "today" or "this week" (1.0.0 counted an alt's first login as today's kills) only
+    -- loses that number (0 / unknown), not the whole standing: the total still counts. More than the total stays
+    -- impossible (the whole standing goes, as before).
+    today, week, weekly = Num(today, MAX_TOTAL), Num(week, 99999), Num(weekly, MAX_TOTAL)
     if not (rank and total and day and today) or today > total or type(class) ~= "string"
         or not class:match("^%u+$") or #class > 12 then return nil end
     if weekly and (weekly > total or weekly < today) then return nil end
+    if today > MAX_TODAY then today = 0 end
+    if weekly and weekly > MAX_WEEK then weekly = nil end
     local titles = NS.TITLES and #NS.TITLES or 41
     if rank > titles then rank = titles end
     local least = NS.RankOf and NS.RankOf(total) or 0

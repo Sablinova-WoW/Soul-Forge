@@ -1677,7 +1677,7 @@ local SEALED = {
     "1241ce82:086aa65150366d04621ef340b1a420827548745939eb02bfd5e26c159b088fac",
     "3f94d68b:99da737c554789cdb418a5dfb4186d9ad79be112cb840d7993277fa4d7b11b47",
     "6ce7de94:355535b0555fa097aaa0577fb78bbbb238ed4fcb5d1c1933516d9232135ba8e3",
-    "1a3ae69e:c4dd01d75863bc597899091ebaff08ca9a3fbc85f0b524ed0fb3a6c14f04357e",
+    "1a3ae69e:c4dd01d75863b46a0699091ebaff08ca9a3fbc85f0b524ed0fb3a6c14f04357e",
     "478f4e37:35dd30d50212bb61f643f9aef1254211dc4f4c5b36070e610dee36c80ceb89d4",
     "74e3b5d0:8ce870d69fd5a8384d515c3d294c7d571e60dd327c5af8d50c29c7cfc8d1dd2a",
     "22381d6a:f00990d45779a733d696dacd6173b89d60706d09c2ace2490a6457d685b7317f",
@@ -1723,20 +1723,30 @@ local function OpenTitles(rank)
     rank = math.min(tonumber(rank) or 0, #TITLES)
     while opened < rank do
         opened = opened + 1
-        local t = TITLES[opened]
-        local hex = SEALED[opened]:match(":(%x+)$") or ""
-        local s = (t[1] * 31 + opened * 7919 + 1234567) % SEAL_P
-        if s == 0 then s = 1 end
-        local out = {}
-        for j = 1, #hex - 1, 2 do
-            s = SealStep(s)
-            local c = (tonumber(hex:sub(j, j + 1), 16) - s % 256) % 256
-            if c > 0 then out[#out + 1] = string.char(c) end
-        end
-        t[2] = table.concat(out)
+        TITLES[opened][2] = NS.TitleName(opened)
     end
 end
 NS.OpenTitles = OpenTitles
+-- (1.0.1) The name of title i, opened without marking it reached: for other players' titles (leaderboard rows and
+-- their tooltips, player tooltips). The user's call: a title someone has earned is theirs to show. Your own lists
+-- keep "???" for the titles you haven't reached. Opened once, a few string operations, then kept.
+local othersNames = {}
+function NS.TitleName(i)
+    local t, sealed = TITLES[i], SEALED[i]
+    if not t or not sealed then return nil end
+    if othersNames[i] then return othersNames[i] end
+    local hex = sealed:match(":(%x+)$") or ""
+    local s = (t[1] * 31 + i * 7919 + 1234567) % SEAL_P
+    if s == 0 then s = 1 end
+    local out = {}
+    for j = 1, #hex - 1, 2 do
+        s = SealStep(s)
+        local c = (tonumber(hex:sub(j, j + 1), 16) - s % 256) % 256
+        if c > 0 then out[#out + 1] = string.char(c) end
+    end
+    othersNames[i] = table.concat(out)
+    return othersNames[i]
+end
 
 local function Thousands(n)
     if not n then return "—" end
@@ -1923,7 +1933,7 @@ local function PlayerTooltip(tt, unit)
     if rank and rank > 0 and TITLES[rank] then
         local c = NS.StageText and NS.StageText(rank)
         local hex = c and string.format("%02x%02x%02x", c[1] * 255, c[2] * 255, c[3] * 255) or "ffd15a"
-        tt:AddLine("|cff" .. hex .. TITLES[rank][2] .. "|r  |cff8a8a8a(Soul Forge)|r")
+        tt:AddLine("|cff" .. hex .. (NS.TitleName(rank) or TITLES[rank][2]) .. "|r  |cff8a8a8a(Soul Forge)|r")   -- (1.0.1) their title shown
         tt:Show()
     end
 end

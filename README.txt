@@ -1,6 +1,17 @@
-SOUL FORGE 1.0.0
+SOUL FORGE 1.0.1
 ================
 WoW 3.3.5a • Designed for Synastria
+
+NEW IN 1.0.1 (bug fixes)
+- Leaderboards: a player who logged in several characters for the first time
+  is no longer thrown off everyone's board; Souls Today / This Week count per
+  character (a character's first login doesn't count its lifetime kills);
+  the green tick no longer cuts an account total to the checked character;
+  other players' titles show by name; long titles shrink or use two lines.
+- Kills: no doubled headings after sorting (Cognac, Alliance, Horde); This
+  Prestige says Statistics kills are only in Overall Kills.
+- Cosmic Titles list: long titles shown whole. The 100,000-kill title is
+  spelled Justicar. No Lua error when clicking away from the Look menu.
 
 NEW IN 1.0.0 (first full release)
 - Everything below, after the 0.x test builds. Since the last test builds:
@@ -53,7 +64,7 @@ WHAT IT DOES
   list) and TITLES (every title you have earned, newest first, under the next
   one as ???, with the day you earned it).
 - Other players who have Soul Forge see your title on your tooltip, and you
-  see theirs ("<title> (Soul Forge)"; ??? for a title you haven't reached yet). This uses hidden addon messages,
+  see theirs ("<title> (Soul Forge)"). This uses hidden addon messages,
   never chat: your guild is told once per session and guild and group when
   you earn a title; hovering a friendly player whose title isn't known yet
   asks them once per session. Players without the addon see nothing.
@@ -352,7 +363,8 @@ LEADERBOARDS
   get a green tick after their name; anyone caught claiming more than the
   server shows is dropped. Checks are
   passed on, but only trusted from players you checked yourself. A checked
-  total counts up to 1,000 + 3,000 kills an hour more than was checked.
+  character counts up to 1,000 + 3,000 kills an hour more than was checked;
+  the account's other characters count as their addon says.
   /kt boards off leaves the channel and sends nothing.
 
 INSTALL
@@ -463,4 +475,4 @@ ATTRIBUTION AND LICENSE NOTES
   taken from the game client's own encounter table. InstanceGPS is only read
   at run time if you have it installed.
 
-Release version: 1.0.0.
+Release version: 1.0.1.

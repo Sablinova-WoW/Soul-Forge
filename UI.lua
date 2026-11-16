@@ -236,6 +236,10 @@ local function RebuildList(searchOnly)
         text = text .. "  •  Here: " .. (ctx.name or "?")
         if not ctx.instance or ctx.showMode then text = text .. " (" .. ctx.label .. ")" end
     end
+    -- (1.0.1) imported Statistics-tab kills can't be split by prestige, so This Prestige leaves them out: say so
+    if NS.Settings().countView == "prestige" and #NS.UnlinkedStats() > 0 then
+        text = text .. "  •  Statistics kills: Overall Kills only"
+    end
     statusText:SetText(text)
 end
 
@@ -440,11 +444,23 @@ local STAGE_BANDS = {
 local FADE_GLOW = { { 0.4, 1, 0.5 }, { 0.5, 0.75, 1 }, { 1, 0.1, 0.2 }, { 0.8, 0.45, 1 }, { 1, 0.7, 0.2 } }
 NS.FIRE_BANDS, NS.FIRE_DIM_BANDS, NS.STAGE_BANDS = FIRE_BANDS, FIRE_DIM_BANDS, STAGE_BANDS   -- (tests)
 
+-- (1.0.1) Keeps a FontString invisible for good. On 3.3.5 a FontString's alpha is its text colour's alpha, so a
+-- later SetTextColor(..., 1) (the table re-colours its headings on every sort) brings a SetAlpha(0) label back.
+function NS.KeepHidden(fs)   -- on NS: UI.lua is at Lua 5.1's local and upvalue limits
+    fs:SetAlpha(0)
+    if fs.SetShadowColor then fs:SetShadowColor(0, 0, 0, 0) end
+    local setColor = fs.SetTextColor
+    if setColor then
+        fs.SetTextColor = function(self, r, g, b) setColor(self, r, g, b, 0) end
+    end
+
 -- FadeWords(fs, bands): draws fs's words as stacked copies, each clipped by a ScrollFrame to one horizontal band and
 -- tinted that band's colour (a FontString has no colour gradient on 3.3.5). fs itself stays for layout and is made
 -- invisible; its SetText is wrapped. The bands overlap by one unit so no dark seam shows between them. Returns the
 -- fade (fade:SetBands(colours) recolours it); nil where ScrollFrames can't be made.
 -- (0.9.27) fs.fitW, if set: words wider than that many units are drawn smaller to fit (Cognac's narrow page card).
+end
+
 local function FadeWords(fs, bands, flags)
     if not fs or fs.fade then return fs and fs.fade end
     local parent = fs:GetParent()
@@ -1588,10 +1604,13 @@ function BuildTitlesPicture(tp, f, fx)
         icons = true,
         icon = function(row) return row.next and art.starViolet or art.starGold end,
         columns = {
-            { key = "rank", label = "#", width = 70, justify = "RIGHT", sortable = false },
-            { key = "title", label = Spaced("Title"), width = 260, stretch = true, sortable = false },
-            { key = "need", label = Spaced("Total Kills"), width = 150, justify = "RIGHT", sortable = false },
-            { key = "status", label = Spaced("Earned"), width = 190, sortable = false },
+            -- (1.0.1) the table is ~485 units inside, so these were too wide in sum (670) and the title column, which
+            -- takes what is left, got ~75 and cut long titles with "..." beside empty room. Earned needs ~95
+            -- ("Before Soul Forge"), Total Kills its heading; the title column now gets ~190 (longest title fits).
+            { key = "rank", label = "#", width = 56, justify = "RIGHT", sortable = false },
+            { key = "title", label = Spaced("Title"), width = 120, stretch = true, sortable = false },
+            { key = "need", label = Spaced("Total Kills"), width = 118, justify = "RIGHT", sortable = false },
+            { key = "status", label = Spaced("Earned"), width = 120, sortable = false },
         },
         cell = TitleCell,
     })
@@ -1781,6 +1800,7 @@ local function BuildPicture(f)
                 b:SetPoint("TOP", 0, -6 - (i - 1) * 26)
             end
             S.TrackPopup(menu)
+            menu.owner = self   -- (1.0.1) a press on the Look button itself is not a click away
         end
         menu:ClearAllPoints()
         menu:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -4)
@@ -2675,6 +2695,7 @@ local function BuildMaterial(f)
                 b:SetPoint("TOP", 0, -6 - (i - 1) * 26)
             end
             S.TrackPopup(menu)
+            menu.owner = self   -- (1.0.1) a press on the Look button itself is not a click away
         end
         menu:ClearAllPoints()
         menu:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -4)
@@ -3761,6 +3782,7 @@ local function BuildCognac(f)
                 b:SetPoint("TOP", 0, -6 - (i - 1) * 26)
             end
             S.TrackPopup(menu)
+            menu.owner = self   -- (1.0.1) a press on the Look button itself is not a click away
         end
         menu:ClearAllPoints()
         menu:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -4)
@@ -4310,7 +4332,7 @@ local function BuildCognac(f)
     end
     -- the Kills headings: the look's own labels hidden (they stay clickable to sort), the words in ink
     for _, h in ipairs(results.headers) do
-        h.label:SetAlpha(0)
+        NS.KeepHidden(h.label)
         local inked = h:CreateFontString(nil, "OVERLAY")
         Crimson(inked, 13, "bold")
         inked:SetTextColor(unpack(INK))
@@ -4516,6 +4538,7 @@ local function BuildFaction(f, side)
                 b:SetPoint("TOP", 0, -6 - (i - 1) * 26)
             end
             S.TrackPopup(menu)
+            menu.owner = self   -- (1.0.1) a press on the Look button itself is not a click away
         end
         menu:ClearAllPoints()
         menu:SetPoint("TOPRIGHT", self, "BOTTOMRIGHT", 0, -4)
@@ -4932,7 +4955,7 @@ local function BuildFaction(f, side)
         end
     end
     for _, h in ipairs(results.headers) do
-        h.label:SetAlpha(0)
+        NS.KeepHidden(h.label)
         local w = h:CreateFontString(nil, "OVERLAY")
         if L.headingCrimson then Crimson(w, L.headingSize or 13, "bold") else Cinzel(w, 12, true) end
         w:SetTextColor(unpack(L.heading))
