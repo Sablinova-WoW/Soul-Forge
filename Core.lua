@@ -1638,7 +1638,10 @@ NS.TotalStatId = function() return FindTotalStat() end   -- (0.9.42) Verify.lua 
 -- (0.9.42) this character's own "Total kills" as last read (sent with your standing so others can check it)
 function NS.CharTotal()
     local c = charKey and db and db.chars and db.chars[charKey]
-    return c and type(c.totalKills) == "number" and c.totalKills or nil
+    if not (c and type(c.totalKills) == "number") then return nil end
+    -- (1.0.2) the server only knows this character's current life: earlier lives under the same name left out
+    local past = tonumber(c.pastLives) or 0
+    return c.totalKills > past and c.totalKills - past or 0
 end
 
 local function ReadTotal()
@@ -1940,11 +1943,30 @@ end
 NS.PlayerTooltip = PlayerTooltip
 
 -- Remember this character's total (never lowered: a 0 before the game sent the statistics is ignored).
+-- (1.0.2) A character deleted and made again with the same name (a new "life") has the same name-realm key but
+-- a new GUID, and the game's "Total kills" starts again from 0. Seen by the GUID: everything counted under this
+-- name so far becomes c.pastLives and each new reading is added on top, so the account total, titles, the
+-- boards and This Prestige carry on without a jump and the new life's kills count at once. (Before, the saved
+-- total was never lowered, so a new life's kills counted only once they passed the old life's total.)
+-- A character saved before 1.0.2 has no GUID yet: it is only remembered (a life change before that can't be seen).
+local lifeChecked = false   -- this session's GUID check is done
+local function CheckLife(c)
+    local g = type(UnitGUID) == "function" and UnitGUID("player")
+    if type(g) ~= "string" or g == "" then return end
+    if type(c.guid) == "string" and c.guid ~= g then
+        c.pastLives = tonumber(c.totalKills) or tonumber(c.pastLives) or 0
+        Print(format("%s is a new character with an earlier one's name: the earlier %s kills stay counted, new kills add on top.",
+            tostring(charKey):match("^[^%-]+") or "This character", Thousands(c.pastLives)))
+    end
+    c.guid = g
+end
 local function UpdateTotal()
     if not charKey or frozen or not db then return end
+    local c = CharDB()
+    if not lifeChecked then CheckLife(c); lifeChecked = c.guid ~= nil end
     local v = ReadTotal()
     if not v or v <= 0 then return end
-    local c = CharDB()
+    v = v + (tonumber(c.pastLives) or 0)
     local before = c.totalKills
     if (before or 0) < v then c.totalKills = v end
     if not c.totalStart then c.totalStart = v end

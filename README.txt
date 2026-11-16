@@ -1,6 +1,12 @@
-SOUL FORGE 1.0.1
+SOUL FORGE 1.0.2
 ================
 WoW 3.3.5a • Designed for Synastria
+
+NEW IN 1.0.2
+- New lives: a character deleted and made again with the same name keeps its
+  earlier kills, and the new character's kills count right away (before, they
+  only counted once they passed the old character's total). Update before you
+  delete the old character, and log it in once, so Soul Forge can tell them apart.
 
 NEW IN 1.0.1 (bug fixes)
 - Leaderboards: a player who logged in several characters for the first time
@@ -475,4 +481,4 @@ ATTRIBUTION AND LICENSE NOTES
   taken from the game client's own encounter table. InstanceGPS is only read
   at run time if you have it installed.
 
-Release version: 1.0.1.
+Release version: 1.0.2.
