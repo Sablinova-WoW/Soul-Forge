@@ -57,6 +57,7 @@ local ANSWER_GAP = 60        -- one answer per question (any asker) per minute
 local QUERY_EVERY = 10       -- boss/instance questions: at most one per 10 seconds
 local KEEP_DAYS = 30         -- standings and boss answers not heard for this long are forgotten
 local MAX_PEERS = 1000       -- standings kept at most (the oldest go first)
+local MAX_CLAIMS = 50        -- (1.0.3) per-character claims kept per account (cc; was 12)
 local MAX_RESULTS = 60       -- boss/instance comparisons kept (saved; the oldest go first)
 local MAX_REJOINS = 3        -- per session, after being thrown out of the channel
 -- (0.9.41) catch-up answers: at most CATCH_MAX lines (the CATCH_TOP highest totals, then the most recently
@@ -664,6 +665,13 @@ local function Clean(class, rank, total, day, today, week, weekly)
     return class, rank, total, day, today, week, weekly
 end
 
+-- (1.0.3) a lower total than the one held, while the held one was heard within KEEP_DAYS: keep the held one
+local function HoldHigher(p, total, now)
+    if type(p.t) ~= "number" or total >= p.t then return false end
+    local at = tonumber(p.th) or tonumber(p.s) or 0
+    return now - at < KEEP_DAYS * 86400
+end
+
 local function OnRecord(sender, acct, class, rank, total, day, today, week, weekly, shown, mine)
     local b = Board()
     if not b or acct == b.id then return end
@@ -677,16 +685,39 @@ local function OnRecord(sender, acct, class, rank, total, day, today, week, week
     elseif p.n ~= sender then
         DropName(b, sender, acct)
     end
+    -- (1.0.3) an account's total never goes down (saved totals are never lowered), so a lower one comes from an
+    -- older copy of the same saved file: the same WoW account played from two WoW folders (a copied client) keeps
+    -- one board ID in both, and each copy sends its own total and shown name. The standing then flipped between
+    -- the two at every login. The higher total, its title and its shown name stay while that total is still heard
+    -- (p.th: when; KEEP_DAYS, as everything on the board); the rest is taken as heard.
+    local now = time and time() or 0
+    if HoldHigher(p, total, now) then
+        total, shown = p.t, p.sh
+        if type(p.r) == "number" and p.r > rank then rank = p.r end
+    else
+        p.th = now
+    end
     p.n, p.c, p.r, p.t, p.day, p.d, p.s = sender, class, rank, total, day, today, time and time() or 0
     p.wk, p.w, p.sh = week, weekly, ValidName(shown)
     -- (0.9.42) the sender's own character total (what a server check compares); never above the account's total
     mine = Num(mine, MAX_TOTAL)
     if mine and mine <= total then
         p.cc = type(p.cc) == "table" and p.cc or {}
+        -- (1.0.3) room for MAX_CLAIMS characters (was 12, one dropped at random); when full, a character the
+        -- server never checked goes first, so the checked ones keep the claim their check is compared with
         if not p.cc[sender] then
-            local n = 0
-            for _ in pairs(p.cc) do n = n + 1 end
-            if n >= 12 then for k in pairs(p.cc) do if k ~= p.n then p.cc[k] = nil; break end end end
+            local n, drop, dropChecked = 0, nil, nil
+            local vc = type(p.vc) == "table" and p.vc or {}
+            for k in pairs(p.cc) do
+                n = n + 1
+                if k ~= p.n then
+                    if vc[k] then dropChecked = dropChecked or k else drop = drop or k end
+                end
+            end
+            if n >= MAX_CLAIMS then
+                local k = drop or dropChecked
+                if k then p.cc[k] = nil end
+            end
         end
         p.cc[sender] = mine
     end
@@ -707,11 +738,18 @@ local function OnRelay(acct, class, rank, total, day, today, week, weekly, age, 
     local p = b.peers[acct]
     if p then
         if type(p.s) == "number" and p.s >= heard then return end   -- what we know is as fresh or fresher
+        -- (1.0.3) not lowered, as in OnRecord (an older copy of the same saved file)
+        if HoldHigher(p, total, heard) then
+            total = p.t
+            if type(p.r) == "number" and p.r > rank then rank = p.r end
+        else
+            p.th = heard
+        end
     else
         if name == myName then return end
         for _, q in pairs(b.peers) do if q.n == name then return end end
         for _, c in ipairs(AccountChars()) do if c.name == name then return end end
-        p = { n = name, sh = ValidName(shown) }
+        p = { n = name, sh = ValidName(shown), th = heard }
         b.peers[acct] = p
     end
     p.c, p.r, p.t, p.day, p.d, p.s, p.wk, p.w = class, rank, total, day, today, heard, week, weekly

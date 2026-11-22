@@ -74,6 +74,17 @@ local LOOKS = {
             { 4, -3, 2, 9, 2.0, 0.4 } } },
 }
 
+-- (1.0.3, the user) the "+N souls" kill popup at the button's top-right, outside the badge (see SoulPop),
+-- in each look's own letters and colour: {font, size, r, g, b}. The fonts are the window's (NS.UIKit), each look's
+-- number font; a dark outline keeps it readable over any minimap.
+local SOULS_INK = {
+    cosmic = { "Cinzel", 11, 0.85, 0.72, 1 },
+    material = { "Rajdhani", 12, 0.40, 0.93, 1 },
+    cognac = { "Crimson", 12, 1, 0.80, 0.38 },
+    alliance = { "Crimson", 12, 0.72, 0.84, 1 },
+    horde = { "Crimson", 12, 1, 0.55, 0.20 },
+}
+
 local button
 
 local function Settings() return NS.Settings and NS.Settings() end
@@ -134,10 +145,81 @@ local function Place()
     button:SetPoint("CENTER", Minimap, "CENTER", x / sc, y / sc)
 end
 
+-- (1.0.3, the user) The kill popup: "+1 soul" when you kill something, counting up "+2 souls", "+3 souls"... while
+-- the kills keep coming. It stays HOLD seconds after the last kill, then fades out over FADE seconds; once gone, the
+-- streak starts again at +1 (a kill while it is still fading carries the streak on). Shown unless turned off in the
+-- right-click menu (minimapSouls = false). Only WoW's own animation runs the timing (no OnUpdate), and only per kill.
+-- It sits above the button's top-right corner, or above its top-left when that would leave the screen.
+local HOLD, FADE = 3, 2.5
+local function SoulPop()
+    if not button or not button:IsVisible() then return end
+    local s = Settings()
+    if not s or s.minimapSouls == false then return end
+    local f = button.souls
+    if not f then
+        f = CreateFrame("Frame", nil, button)   -- its own frame, drawn over the badge and the minimap's other buttons
+        f:SetFrameLevel(button:GetFrameLevel() + 10)
+        f:SetWidth(1); f:SetHeight(1)
+        f.text = f:CreateFontString(nil, "OVERLAY")
+        f.streak = 0
+        f:Hide()
+        local g = type(f.CreateAnimationGroup) == "function" and f:CreateAnimationGroup() or nil
+        if g then
+            local a = g:CreateAnimation("Alpha")
+            a:SetChange(-1); a:SetStartDelay(HOLD); a:SetDuration(FADE)
+            g:SetScript("OnFinished", function() f:Hide(); f.streak = 0 end)
+        end
+        f.fade = g
+        button.souls = f
+    end
+    if not f.fade then return end   -- a client without animations: no popup rather than one that never leaves
+    local key = s.skin and SOULS_INK[s.skin] and s.skin or "cosmic"
+    local fs = f.text
+    if f.look ~= key then
+        f.look = key
+        local ink = SOULS_INK[key]
+        local K = NS.UIKit
+        local face = K and K[ink[1]]
+        if face then face(fs, ink[2], "bold", "OUTLINE") end
+        if not fs:GetFont() then fs:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", ink[2], "OUTLINE") end
+        fs:SetTextColor(ink[3], ink[4], ink[5], 1)
+        fs:SetShadowColor(0, 0, 0, 1)
+        fs:SetShadowOffset(1, -1)
+    end
+    if not f:IsShown() or not f.fade:IsPlaying() then f.streak = 0 end   -- (faded, or cut off while hidden)
+    f.streak = f.streak + 1
+    fs:SetText("+" .. f.streak .. (f.streak == 1 and " soul" or " souls"))
+    -- the right side unless the text would run off the screen there
+    local w = fs:GetStringWidth() or 0
+    local right = button:GetRight()
+    local sc = button:GetEffectiveScale() or 1
+    local ui = UIParent:GetEffectiveScale() or 1
+    local screen = UIParent:GetRight() or 0
+    local left = (right and screen > 0 and (right + w) * sc / ui > screen) and true or false
+    if f.left ~= left then
+        f.left = left
+        f:ClearAllPoints()
+        fs:ClearAllPoints()
+        if left then
+            fs:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", 0, 0)
+            f:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 4, -4)
+        else
+            fs:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+            f:SetPoint("BOTTOMLEFT", button, "TOPRIGHT", -4, -4)
+        end
+    end
+    f.fade:Stop()   -- (back to full: the hold starts over)
+    f:SetAlpha(1)
+    f:Show()
+    f.fade:Play()
+end
+NS.SoulPop = SoulPop
+
 local function EndDrag(self)
     self:SetScript("OnUpdate", nil)
     self.dragging = nil
     self:UnlockHighlight()
+    if self.souls then self.souls.left = nil end   -- (1.0.3) a new spot may need the popup's other side
     if self.badge then self.badge:SetWidth(BADGE); self.badge:SetHeight(BADGE) end
 end
 
@@ -410,6 +492,12 @@ local function RightMenu(self)
         { text = "Theme", notCheckable = true, hasArrow = true, menuList = themes, disabled = #themes == 0 },
         { text = "Lock in place", checked = s.minimapLocked and true or false, keepShownOnClick = false,
           func = function() s.minimapLocked = not s.minimapLocked or nil end },
+        -- (1.0.3) the "+N souls" kill popup (on unless turned off: false = off, nothing saved while on)
+        { text = "Show +souls", checked = s.minimapSouls ~= false, keepShownOnClick = false,
+          func = function()
+              if s.minimapSouls == false then s.minimapSouls = nil else s.minimapSouls = false end
+              if s.minimapSouls == false and button.souls then button.souls:Hide(); button.souls.streak = 0 end
+          end },
         { text = "Reset to minimap", notCheckable = true, func = function() NS.ResetMinimapButton() end },
     }, menuFrame, "cursor", 0, 0, "MENU")
 end

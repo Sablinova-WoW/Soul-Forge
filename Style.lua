@@ -672,10 +672,31 @@ function S.AddMenuLayer(isOpen, close)
 	layers[#layers + 1] = { isOpen = isOpen, close = close }
 end
 menuLayer:SetScript("OnHide", function()
+	S.menusClosedAt = GetTime()   -- (1.0.3) this Escape closed a menu: the window stays (UI.lua)
 	S.CloseMenus()
 	for _, l in ipairs(layers) do if l.isOpen() then l.close() end end
 end)
 if type(UIMenus) == "table" then tinsert(UIMenus, ADDON .. "Menus") end
+
+-- (1.0.3) A search box keeps the keyboard after a click, and while it does the game never sees Escape: the box
+-- gets it. It used to only let go of the keyboard, so the first Escape seemed to do nothing and the next one
+-- closed the window ("Escape doesn't work... now it does"). Now Escape in a box lets go of the keyboard and
+-- does what Escape does everywhere else: closes the open menu (the box's own: Places, a picker), else the window
+-- the box is on (the first frame up from it that the game closes with Escape, UISpecialFrames).
+function S.EscapeFromInput(e)
+	e:ClearFocus()
+	if menuLayer:IsShown() then menuLayer:Hide(); return end
+	local f = e:GetParent()
+	while f do
+		for _, name in ipairs(type(UISpecialFrames) == "table" and UISpecialFrames or {}) do
+			if _G[name] == f then
+				if f:IsShown() then f:Hide() end
+				return
+			end
+		end
+		f = f.GetParent and f:GetParent() or nil
+	end
+end
 
 -- Edit boxes S.Dismiss and outside clicks clear. S.Input tracks its own; the other edit boxes call this once their
 -- scripts are set. `area` is what counts as clicking on it, for a box inside a larger panel (default: the box).
@@ -885,7 +906,7 @@ function S.Input(parent, name, width, placeholder, maxLetters, lines)
 		e.box:SetScript("OnEnter", function() e.hovered = true update(e) end)
 		e.box:SetScript("OnLeave", function() e.hovered = false update(e) end)
 	end
-	e:SetScript("OnEscapePressed", e.ClearFocus)
+	e:SetScript("OnEscapePressed", S.EscapeFromInput)
 	e:HookScript("OnTextChanged", update)
 	e.UpdatePlaceholder = update
 	update(e)

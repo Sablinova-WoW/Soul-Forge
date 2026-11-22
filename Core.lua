@@ -51,6 +51,7 @@ local COUNT_VIEWS = { overall = "Overall Kills", prestige = "This Prestige" }
 local db, charKey, settings
 local playerGUID
 local dmgMine, dmgGroup, counted = {}, {}, {}
+local lastRead   -- (1.0.3) this character's "Total kills" as the game last gave it this session (NS.CharTotal)
 local newEntries = 0
 local diagnostics = false
 local gpsInst, gpsBosses, gpsOrder = nil, {}, {}
@@ -437,10 +438,39 @@ local function BuiltinFor()
     return builtinInst
 end
 
+-- (1.0.3) InstanceGPS, when installed, only lends its creature IDs to Soul Forge's own encounters of the same name
+-- (so a boss is known before it is first seen); counting is always decided here. True when an ID was added.
+local function AdoptGpsIds(inst)
+    local g = InstanceGPS
+    local gi = type(g) == "table" and type(g.inst) == "table" and g.inst or nil
+    if not gi or type(gi.bosses) ~= "table" or inst.gpsAdopted == gi then return false end
+    inst.gpsAdopted = gi
+    local byName, added = {}, false
+    for _, b in ipairs(inst.bosses) do byName[Normalize(b.name)] = b end
+    for _, gb in ipairs(gi.bosses) do
+        local b = type(gb) == "table" and type(gb.name) == "string" and type(gb.npcs) == "table" and byName[Normalize(gb.name)]
+        if b then
+            local before = #b.npcs
+            for _, id in ipairs(gb.npcs) do
+                local have = type(id) ~= "number"
+                for _, x in ipairs(b.npcs) do if x == id then have = true; break end end
+                if not have then b.npcs[#b.npcs + 1] = id end
+            end
+            if #b.npcs > before then added = true; SaveBossIds(inst.name, b) end
+        end
+    end
+    return added
+end
+
 local function RefreshGPS()
-    local gps = InstanceGPS
-    local inst = type(gps) == "table" and type(gps.inst) == "table" and gps.inst or nil
-    if not inst then inst = BuiltinFor() end
+    -- (1.0.3) Soul Forge's own boss list decides every kill, InstanceGPS installed or not (the user: it must
+    -- count everything on its own). InstanceGPS only for an instance the list doesn't have.
+    local inst = BuiltinFor()
+    if inst and AdoptGpsIds(inst) then gpsInst = nil end   -- new IDs: the creature map is made again below
+    if not inst then
+        local gps = InstanceGPS
+        inst = type(gps) == "table" and type(gps.inst) == "table" and gps.inst or nil
+    end
     if inst == gpsInst then
         if inst and gpsLinked ~= inst then LinkAll() end
         return
@@ -1288,10 +1318,12 @@ local function TryComplete(b)
     elseif not GpsKilled(b) then
         return
     end
-    if not b.noDeath and StillFought(b, GetTime()) then return end
+    -- (1.0.3) the own list is won only once every creature it needs has died: no "still fought" wait (Kalecgos
+    -- never dies and was hit moments before, so that wait blocked his count for good)
+    if not b.noDeath and not b.builtin and StillFought(b, GetTime()) then return end
     local ctx = Context()
     if not ctx or not ctx.instance or not b.npcs[1] then return end
-    st.counted = true
+    st.counted, st.visit = true, builtinRun
     Record(b.npcs[1], nil, ctx)
 end
 
@@ -1400,7 +1432,16 @@ local function OnDeath(ev, srcGUID, srcFlags, dstGUID, dstName, dstFlags)
         if mine or group then
             counted[dstGUID] = now
             dmgMine[dstGUID], dmgGroup[dstGUID] = nil, nil
-            EncState(b).credit = true
+            if NS.SoulPop then NS.SoulPop() end   -- (1.0.3) the minimap button's "+N souls" kill popup
+            local st = EncState(b)
+            -- (1.0.3) counted on an earlier visit and one of its creatures dies again: the instance was reset (a
+            -- boss never comes back in the same copy). InstanceGPS keeps its run (and "killed") when it misses the
+            -- reset (no reset message, boss never targeted alive: a one-shot), so the encounter starts over here.
+            if st.counted and st.visit ~= builtinRun then
+                st = { run = st.run }
+                encState[b] = st
+            end
+            st.credit = true
         end
         if b.builtin then BuiltinDied(b, npc, dstName) end
         AddForm(b, npc, dstName)
@@ -1411,6 +1452,7 @@ local function OnDeath(ev, srcGUID, srcFlags, dstGUID, dstName, dstFlags)
     local ctx = Context()
     counted[dstGUID] = now
     dmgMine[dstGUID], dmgGroup[dstGUID] = nil, nil
+    if NS.SoulPop then NS.SoulPop() end   -- (1.0.3) every kill of yours or your group's: the "+N souls" popup
     if not ctx then return end
     if Counts(npc, ctx) then
         Record(npc, dstName, ctx)
@@ -1637,6 +1679,10 @@ end
 NS.TotalStatId = function() return FindTotalStat() end   -- (0.9.42) Verify.lua reads others' value of the same statistic
 -- (0.9.42) this character's own "Total kills" as last read (sent with your standing so others can check it)
 function NS.CharTotal()
+    -- (1.0.3) the game's own reading this session: exactly what a server check sees. The saved total is never
+    -- lowered, so a character deleted and made again before 1.0.2 (no GUID saved then) kept sending the old
+    -- character's total and was "caught" claiming more than the server showed.
+    if lastRead then return lastRead end
     local c = charKey and db and db.chars and db.chars[charKey]
     if not (c and type(c.totalKills) == "number") then return nil end
     -- (1.0.2) the server only knows this character's current life: earlier lives under the same name left out
@@ -1966,6 +2012,7 @@ local function UpdateTotal()
     if not lifeChecked then CheckLife(c); lifeChecked = c.guid ~= nil end
     local v = ReadTotal()
     if not v or v <= 0 then return end
+    lastRead = v
     v = v + (tonumber(c.pastLives) or 0)
     local before = c.totalKills
     if (before or 0) < v then c.totalKills = v end
@@ -2107,7 +2154,12 @@ T:SetScript("OnEvent", function(self, ev, ...)
         Prune(GetTime())
         UpdateTotal()   -- a fight just ended: a new title is announced now, not at the next loading screen
     else
-        if ev == "PLAYER_ENTERING_WORLD" then builtinRun = builtinRun + 1 end   -- a new run of encounters
+        if ev == "PLAYER_ENTERING_WORLD" then
+            builtinRun = builtinRun + 1   -- a new run of encounters
+            -- (1.0.3) a reset instance can give its creatures the same GUIDs again: the 5-minute "already
+            -- counted" memory is only for the place you are in
+            for g in pairs(counted) do counted[g] = nil end
+        end
         PlaceChanged()
     end
 end)

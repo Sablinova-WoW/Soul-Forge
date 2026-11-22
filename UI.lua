@@ -5381,6 +5381,18 @@ local function OpenWindow()
     ShowTab(activeTab)
 end
 
+-- (1.0.3) Escape always closes the window (the user: never the game menu while Soul Forge is open). The game's
+-- Escape (ToggleGameMenu) closes it with UISpecialFrames, but stops earlier when something else takes the press
+-- (a cast or spell target, a pop-up, another addon's menu). After every Escape: the window still open and no
+-- Soul Forge menu closed by that press -> it closes, and a game menu opened by the same press goes again.
+if type(hooksecurefunc) == "function" and type(ToggleGameMenu) == "function" then
+    hooksecurefunc("ToggleGameMenu", function()
+        if not (window and window:IsShown()) or S.menusClosedAt == GetTime() then return end
+        window:Hide()
+        if GameMenuFrame and GameMenuFrame:IsShown() then GameMenuFrame:Hide() end
+    end)
+end
+
 function NS.ToggleUI()
     if window and window:IsShown() then window:Hide(); return end
     if not window then

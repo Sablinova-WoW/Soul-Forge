@@ -95,11 +95,15 @@ function NS.PeerTrust(p, now)
     -- A checked character with no claim of its own (an older copy's standing) leaves nothing to compare: the old
     -- limit then (checked kills + growth).
     local over, unknown = 0, false
-    local cc = type(p.cc) == "table" and p.cc or nil
+    -- (1.0.3) a checked character whose claim isn't known leaves only ITSELF uncompared when the account sends
+    -- claims (cc has any). Before, one such character capped the whole account at the checked kills: an account
+    -- with more than 12 characters (Lulleh after his prestige) kept losing a random claim, so its board total
+    -- kept collapsing to a few checked characters and back (on and off the board for everyone who checked one).
+    local cc = type(p.cc) == "table" and next(p.cc) ~= nil and p.cc or nil
     for name, c in pairs(p.vc) do
         local claim = cc and tonumber(cc[name])
         if type(c) == "table" and type(c.v) == "number" then
-            if not claim then unknown = true elseif claim > c.v then over = over + (claim - c.v) end
+            if not cc then unknown = true elseif claim and claim > c.v then over = over + (claim - c.v) end
         end
     end
     local claimed = tonumber(p.t)

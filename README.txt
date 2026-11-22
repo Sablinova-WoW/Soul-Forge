@@ -1,6 +1,19 @@
-SOUL FORGE 1.0.2
+SOUL FORGE 1.0.3
 ================
 WoW 3.3.5a • Designed for Synastria
+
+NEW IN 1.0.3
+- Minimap button: "+1 soul" pops up at its top-right corner when you kill
+  something, counts up while you keep killing quickly (+2, +3, ...) and fades
+  away a few seconds after your last kill. In your theme's own letters and
+  colour. Right-click > Show +souls turns it off.
+- Escape always closes the Soul Forge window (an open Soul Forge menu first),
+  also from a search box or while casting; never the game menu instead.
+- Kills are counted by Soul Forge itself, with or without InstanceGPS.
+- Boss kills count after an instance reset even when the boss dies to one
+  big hit (before, a quick second run in the same dungeon could be missed).
+- Leaderboards: a player who plays the same WoW account from two WoW folders
+  no longer flips between two totals and names on the board.
 
 NEW IN 1.0.2
 - New lives: a character deleted and made again with the same name keeps its
