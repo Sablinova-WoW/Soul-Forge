@@ -1,6 +1,16 @@
-SOUL FORGE 1.0.3
+SOUL FORGE 1.0.4
 ================
 WoW 3.3.5a • Designed for Synastria
+
+NEW IN 1.0.4
+- Fixed: "... is a new character with an earlier one's name" could appear on
+  characters that were never deleted (when switching characters), and each
+  time it added that character's whole kill total again. A new character is
+  now only recognised when the game's own kill count really starts again.
+- Totals that were counted twice are repaired automatically the next time
+  you log in each affected character (a chat line says so). If a character
+  really was deleted and made again, /kt undolife puts its earlier life back.
+  Leaderboards take the corrected total.
 
 NEW IN 1.0.3
 - Minimap button: "+1 soul" pops up at its top-right corner when you kill

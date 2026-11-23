@@ -1989,30 +1989,146 @@ end
 NS.PlayerTooltip = PlayerTooltip
 
 -- Remember this character's total (never lowered: a 0 before the game sent the statistics is ignored).
--- (1.0.2) A character deleted and made again with the same name (a new "life") has the same name-realm key but
--- a new GUID, and the game's "Total kills" starts again from 0. Seen by the GUID: everything counted under this
--- name so far becomes c.pastLives and each new reading is added on top, so the account total, titles, the
--- boards and This Prestige carry on without a jump and the new life's kills count at once. (Before, the saved
--- total was never lowered, so a new life's kills counted only once they passed the old life's total.)
--- A character saved before 1.0.2 has no GUID yet: it is only remembered (a life change before that can't be seen).
+-- (1.0.2) A character deleted and made again with the same name (a new "life") has the same name-realm key, and
+-- the game's "Total kills" starts again from 0: everything counted under this name so far becomes c.pastLives and
+-- each new reading is added on top, so the account total, titles, the boards and This Prestige carry on.
+-- (1.0.4) 1.0.2 took a new GUID alone as proof and ran before the game's count was read. Players saw it fire on
+-- characters that were never remade (on switching characters), and each false alarm added the whole total again
+-- (c.pastLives = c.totalKills, which already held the earlier "lives"), so totals doubled. Now a new life needs
+-- the game's own proof: a different GUID AND a "Total kills" reading that started again (under half of this life's
+-- highest reading, c.lifeTotal). A new life adds only the life that ended (pastLives + lifeTotal), never twice.
+-- Saved totals inflated by 1.0.2/1.0.3 are repaired once per character (RepairLives, c.lifeFixed).
 local lifeChecked = false   -- this session's GUID check is done
-local function CheckLife(c)
+local function LifeTotal(c)   -- this life's highest "Total kills" reading
+    local life = tonumber(c.lifeTotal)
+    if life then return life end
+    life = (tonumber(c.totalKills) or 0) - (tonumber(c.pastLives) or 0)   -- (saved before 1.0.4)
+    return life > 0 and life or 0
+end
+-- (1.0.4) once per character saved with pastLives by 1.0.2/1.0.3, at its first reading (v = the game's own count).
+-- The game's "Total kills" of one character never goes down, so a reading at least as high as the first one ever
+-- saved (c.totalStart, taken before any "life" was added) means the same character: every "earlier life" was a
+-- false alarm. Its true total is then the game's own count. The old numbers are kept (c.lifeUndo; /kt undolife).
+-- A reading under the first one = the count really started again: a real new life, left as it is.
+local function RepairLives(c, v)
+    c.lifeFixed = true
+    local past = tonumber(c.pastLives) or 0
+    if past <= 0 then return end
+    local start = tonumber(c.totalStart) or past
+    if v < start then return end   -- the game's count did start again: a real new life
+    local total = tonumber(c.totalKills) or 0
+    local fixed = total - past
+    if fixed < v then fixed = v end
+    if fixed >= total then c.pastLives = nil; return end   -- nothing was added twice
+    c.lifeUndo = { past = past, total = total, base = c.totalBase, at = time and time() or nil }
+    c.pastLives, c.totalKills, c.lifeTotal = nil, fixed, v
+    -- This Prestige: a prestige start taken from the doubled total is brought down by the same amount
+    local base = tonumber(c.totalBase)
+    if base and base > fixed then
+        base = base - past
+        c.totalBase = base > 0 and (base < fixed and base or fixed) or 0
+    end
+    db.lifeFixAt = time and time() or 0   -- Leaderboard.lua sends it, so boards take the lower total
+    c.lifeAsk = true   -- AskLife: one Yes/No question, in case this character really was deleted and made again
+    Print(format("%s: %s kills had been counted twice by mistake (a false \"new character\" alarm in Soul Forge "
+        .. "1.0.2/1.0.3). Fixed: %s kills, as the game counts them.", tostring(charKey):match("^[^%-]+") or "This character",
+        Thousands(total - fixed), Thousands(fixed)))
+    return true
+end
+-- returns true when saved totals went down (titles reached are then looked at again)
+local function CheckLife(c, v)
     local g = type(UnitGUID) == "function" and UnitGUID("player")
-    if type(g) ~= "string" or g == "" then return end
+    if type(g) ~= "string" or not g:match("^0x%x+$") or g:match("^0x0*$") then return nil end   -- not ready yet
+    local lowered = not c.lifeFixed and RepairLives(c, v)
+    -- (1.0.4) Expulsion's saved file (23 Nov): only his alt got the false alarms, his main (played first) never did:
+    -- the game can hand a character another character's ID when you switch. An ID that another character of this
+    -- account has saved is never this one's: nothing is decided or saved, the next reading checks again.
+    for key, o in pairs(db.chars) do
+        if key ~= charKey and type(o) == "table" and o.guid == g then
+            if c.guidOther ~= g then c.guidOther, c.guidSwaps = g, (tonumber(c.guidSwaps) or 0) + 1 end
+            return lowered
+        end
+    end
+    lifeChecked = true
     if type(c.guid) == "string" and c.guid ~= g then
-        c.pastLives = tonumber(c.totalKills) or tonumber(c.pastLives) or 0
-        Print(format("%s is a new character with an earlier one's name: the earlier %s kills stay counted, new kills add on top.",
-            tostring(charKey):match("^[^%-]+") or "This character", Thousands(c.pastLives)))
+        local life = LifeTotal(c)
+        if v * 2 < life then
+            -- the game's count started again: a real new life
+            local past = (tonumber(c.pastLives) or 0) + life
+            c.pastLives, c.lifeTotal = past, 0
+            if (tonumber(c.totalKills) or 0) < past then c.totalKills = past end
+            Print(format("%s is a new character with an earlier one's name: the earlier %s kills stay counted, new kills add on top.",
+                tostring(charKey):match("^[^%-]+") or "This character", Thousands(past)))
+        else
+            -- (1.0.4) not a new character (the game's count carries on): only noted, so a saved file shows it
+            c.guidPrev, c.guidSwaps = c.guid, (tonumber(c.guidSwaps) or 0) + 1
+            if diagnostics then Print("Character ID changed but the kill count did not restart: same character.") end
+        end
     end
     c.guid = g
+    return lowered
 end
+-- (1.0.4) puts back what RepairLives took off, for a character that really was deleted and made again
+local function UndoLife(c)
+    if type(c) ~= "table" then return false end
+    local u = c.lifeUndo
+    c.lifeAsk = nil
+    if type(u) ~= "table" or not tonumber(u.past) then return false end
+    local past = tonumber(u.past)
+    c.pastLives, c.totalBase, c.lifeUndo = past, u.base, nil
+    local total = past + LifeTotal(c)
+    if total < (tonumber(u.total) or 0) then total = tonumber(u.total) end
+    c.totalKills = total
+    Print(format("Earlier lives put back: %s now counts %s kills.", tostring(charKey):match("^[^%-]+") or "this character",
+        Thousands(total)))
+    CheckRank()
+    if NS.RefreshUI then NS.RefreshUI() end
+    return true
+end
+-- (1.0.4, the user: players won't type commands) after a repair, one Yes/No question on this character. Yes = it
+-- really was deleted and made again (the old kills come back); No or Escape = the fix stays. Asked at each login
+-- until answered.
+local askedLife = false
+local function AskLife(c)
+    if askedLife or not c.lifeAsk or type(StaticPopupDialogs) ~= "table" or type(StaticPopup_Show) ~= "function" then return end
+    if type(c.lifeUndo) ~= "table" then c.lifeAsk = nil; return end
+    askedLife = true
+    local key = charKey
+    StaticPopupDialogs.SOULFORGE_LIFE = StaticPopupDialogs.SOULFORGE_LIFE or {
+        button1 = "Yes, it was remade", button2 = "No", timeout = 0, whileDead = 1, hideOnEscape = 1,
+        OnAccept = function(self) local o = db and db.chars[self.data] if o then UndoLife(o) end end,
+        OnCancel = function(self) local o = db and db.chars[self.data] if o then o.lifeAsk = nil end end,
+    }
+    local name = tostring(key):match("^[^%-]+") or "this character"
+    StaticPopupDialogs.SOULFORGE_LIFE.text = format("Soul Forge removed %s kills on %s that were counted twice by mistake.\n\n"
+        .. "Was %s deleted and made again with the same name?", Thousands((tonumber(c.lifeUndo.total) or 0) - (tonumber(c.totalKills) or 0)),
+        name, name)
+    local dialog = StaticPopup_Show("SOULFORGE_LIFE")
+    if dialog then dialog.data = key end
+end
+-- (1.0.4) when saved totals were last repaired (Leaderboard.lua: boards then take the lower total)
+function NS.LifeFixAt() return db and tonumber(db.lifeFixAt) or nil end
 local function UpdateTotal()
     if not charKey or frozen or not db then return end
     local c = CharDB()
-    if not lifeChecked then CheckLife(c); lifeChecked = c.guid ~= nil end
     local v = ReadTotal()
     if not v or v <= 0 then return end
     lastRead = v
+    if not lifeChecked and CheckLife(c, v) then
+        -- (1.0.4) a repaired total: titles reached are those of the true total
+        local r = db.rank
+        local sum = AccountTotal()
+        if type(r) == "table" and sum then
+            local rank = RankOf(sum)
+            if (tonumber(r.best) or 0) > rank then
+                if type(r.at) == "table" then for i = rank + 1, #TITLES do r.at[i] = nil end end
+                r.best = rank
+                if (tonumber(r.before) or 0) > rank then r.before = rank end
+            end
+        end
+    end
+    AskLife(c)
+    if v > LifeTotal(c) then c.lifeTotal = v end
     v = v + (tonumber(c.pastLives) or 0)
     local before = c.totalKills
     if (before or 0) < v then c.totalKills = v end
@@ -2231,6 +2347,9 @@ SlashCmdList.SOULFORGE = function(msg)
         NpcReport(tonumber(cmd:match("%d+")))
     elseif cmd == "prestige" then
         StartNewPrestige("manual")
+    elseif cmd == "undolife" then
+        -- (1.0.4) the same as "Yes" on the question after a repair
+        if not UndoLife(charKey and db.chars[charKey]) then Print("Nothing to undo for this character.") end
     elseif cmd == "import" then
         -- Statistics are imported ONCE per character. Reading them again could only add kills that are
         -- already in the counts, so once imported this command changes nothing.
@@ -2321,7 +2440,7 @@ SlashCmdList.SOULFORGE = function(msg)
         diagnostics = cmd == "debug on"
         Print("Kill diagnostics " .. OnOff(diagnostics) .. " (this session only).")
     else
-        Print("/kt  |  /kt status  |  /kt target  |  /kt npc ID  |  /kt view overall|prestige  |  /kt prestige  |  /kt import  |  "
+        Print("/kt  |  /kt status  |  /kt target  |  /kt npc ID  |  /kt view overall|prestige  |  /kt prestige  |  /kt undolife  |  /kt import  |  "
             .. "/kt group on|off  |  "
             .. "/kt mode bosses|all  |  /kt world on|off  |  /kt tooltip on|off  |  /kt alerts on|off  |  /kt share on|off  |  /kt boards on|off  |  /kt boards name NAME|auto  |  /kt minimap on|off|reset  |  /kt skin cosmic|material|cognac|alliance|horde  |  /kt motion full|calm  |  /kt scale 50-150  |  /kt debug on|off")
     end

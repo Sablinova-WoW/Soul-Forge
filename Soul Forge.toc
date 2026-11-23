@@ -2,7 +2,7 @@
 ## Title: |cff7fe8ffS|r|cff90c8ffo|r|cffa0a2ffu|r|cffb07cffl|r |cffffd84aF|r|cffffb23co|r|cffff8c2er|r|cffff5b1fg|r|cffff2a10e|r
 ## Notes: Counts your kills of dungeon and raid bosses and rares, per character, instance and difficulty (incl. Synastria Mythic), with account totals.
 ## Author: Sablinova
-## Version: 1.0.3
+## Version: 1.0.4
 ## SavedVariables: SoulForgeDB
 ## OptionalDeps: InstanceGPS
 

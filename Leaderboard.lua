@@ -480,7 +480,10 @@ local function PushLine()
     pushedRank, pushedTotal = rank, total
     local name, class = MyShown()
     local mine = NS.CharTotal and NS.CharTotal()
-    return Line("R", b.id, class or MyClass(), rank, total, day, today, week, weekly, name, mine and floor(mine) or "-")
+    -- (1.0.4) after a repair of totals doubled by 1.0.2/1.0.3 (for KEEP_DAYS): when, so boards take the lower total
+    local fix = NS.LifeFixAt and NS.LifeFixAt()
+    fix = fix and time and time() - fix < KEEP_DAYS * 86400 and floor(fix) or nil
+    return Line("R", b.id, class or MyClass(), rank, total, day, today, week, weekly, name, mine and floor(mine) or "-", fix)
 end
 
 local function Join()
@@ -672,7 +675,7 @@ local function HoldHigher(p, total, now)
     return now - at < KEEP_DAYS * 86400
 end
 
-local function OnRecord(sender, acct, class, rank, total, day, today, week, weekly, shown, mine)
+local function OnRecord(sender, acct, class, rank, total, day, today, week, weekly, shown, mine, fix)
     local b = Board()
     if not b or acct == b.id then return end
     class, rank, total, day, today, week, weekly = Clean(class, rank, total, day, today, week, weekly)
@@ -691,7 +694,13 @@ local function OnRecord(sender, acct, class, rank, total, day, today, week, week
     -- the two at every login. The higher total, its title and its shown name stay while that total is still heard
     -- (p.th: when; KEEP_DAYS, as everything on the board); the rest is taken as heard.
     local now = time and time() or 0
-    if HoldHigher(p, total, now) then
+    -- (1.0.4) a sender whose totals were repaired (doubled by a false "new character" alarm in 1.0.2/1.0.3) says
+    -- when: a lower total with a newer repair time than seen before is taken as it is
+    fix = type(fix) == "string" and #fix <= 10 and fix:match("^%d+$") and tonumber(fix) or nil
+    if fix and fix > now + 86400 then fix = nil end
+    local fixed = fix and fix > (tonumber(p.fx) or 0) and now - fix < KEEP_DAYS * 86400
+    if fixed then p.fx = fix end
+    if not fixed and HoldHigher(p, total, now) then
         total, shown = p.t, p.sh
         if type(p.r) == "number" and p.r > rank then rank = p.r end
     else
@@ -792,8 +801,8 @@ local function OnLine(msg, sender)
     if verb == "R" then
         local acct, class, rank, total, day, today, more = rest:match("^(%x+) (%S+) (%S+) (%S+) (%S+) (%S+) ?(.*)$")
         if acct and #acct == 14 then
-            local week, weekly, shown, mine = (more or ""):match("^(%S+) (%S+) (%S+) ?(%S*)")
-            OnRecord(sender, acct, class, rank, total, day, today, week, weekly, shown, mine)
+            local week, weekly, shown, mine, fix = (more or ""):match("^(%S+) (%S+) (%S+) ?(%S*) ?(%S*)")
+            OnRecord(sender, acct, class, rank, total, day, today, week, weekly, shown, mine, fix)
         end
     elseif verb == "Q" then
         -- one answer covers every asker of the next minute (it goes to the whole channel)
